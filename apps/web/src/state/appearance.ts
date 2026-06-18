@@ -8,7 +8,10 @@ const ACCENT_VARS = [
   '--accent-hover',
 ] as const;
 
-export const DEFAULT_ACCENT_COLOR = '#c96442';
+// HS Design brand accent (laranja HS). Placeholder white-label value — swap
+// for the official HS Marketing orange when the brand asset is provided.
+// Keep in sync with the FOUC theme-init fallback in apps/web/app/layout.tsx.
+export const DEFAULT_ACCENT_COLOR = '#f26522';
 export const ACCENT_SWATCHES = [
   DEFAULT_ACCENT_COLOR,
   '#2563eb',
