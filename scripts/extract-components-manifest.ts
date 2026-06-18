@@ -10,7 +10,10 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const designSystemsRoot = path.join(repoRoot, 'design-systems');
-const skippedDesignSystemDirectories = new Set(['_schema']);
+// hs-marketing is a prose-only (DESIGN.md-only) white-label brand with no
+// compiled tokens.css/components.html; skip it in the manifest extraction,
+// matching check-components-manifest-extraction and the prose-only tier.
+const skippedDesignSystemDirectories = new Set(['_schema', 'hs-marketing']);
 
 type CliOptions = {
   brandId?: string;

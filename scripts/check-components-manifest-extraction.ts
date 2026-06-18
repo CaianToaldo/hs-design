@@ -9,7 +9,11 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const designSystemsRoot = path.join(repoRoot, 'design-systems');
-const skippedDesignSystemDirectories = new Set(['_schema']);
+// hs-marketing is a prose-only (DESIGN.md-only) white-label brand; it ships no
+// tokens.css/components.html, so it is exempt from the compiled-component
+// manifest path — consistent with how check-design-system-flag-parity already
+// classifies it as the prose-only tier.
+const skippedDesignSystemDirectories = new Set(['_schema', 'hs-marketing']);
 
 type BrandSources = {
   id: string;
