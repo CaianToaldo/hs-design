@@ -101,19 +101,28 @@ COPY --from=build --chown=open-design:open-design /app/assets/community-pets ./a
 COPY --from=build --chown=open-design:open-design /app/plugins/_official ./plugins/_official
 
 COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
+# hs/deploy: bundled authenticating proxy (see deploy/proxy/proxy.js). It runs
+# in the same container, gates with Basic auth, and forwards to the loopback
+# daemon — so the loopback-only daemon needs no API token (loopback peers
+# bypass the auth gate) and there is no second Railway service to wire up.
+COPY deploy/proxy/proxy.js /usr/local/bin/proxy.js
 RUN mkdir -p /app/.od && \
     chown -R open-design:open-design /app && \
     chmod +x /usr/local/bin/entrypoint.sh
 
 ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=192
-ENV OD_BIND_HOST=0.0.0.0
+# Daemon binds loopback only; the bundled proxy is the public listener on 8080.
+ENV OD_BIND_HOST=127.0.0.1
 ENV OD_PORT=7456
+ENV PORT=8080
+ENV DAEMON_INTERNAL=127.0.0.1:7456
 
-EXPOSE 7456
+EXPOSE 8080
 
 # hs/deploy: entrypoint runs as root to chown the (root-owned) mounted volume
-# at /app/.od, then drops to the open-design user via su-exec. Do not re-add a
-# `USER open-design` line here — it would prevent the runtime chown.
+# at /app/.od, then drops to the open-design user via su-exec and starts BOTH
+# the loopback daemon (background) and the public auth proxy (foreground).
+# Do not re-add a `USER open-design` line — it would prevent the runtime chown.
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "apps/daemon/dist/cli.js", "--no-open"]
