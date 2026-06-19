@@ -1,0 +1,32 @@
+# Shrink the `railway up` upload: exclude everything the deploy/Dockerfile does
+# NOT COPY into the build. The Docker build only uses package.json, pnpm-*.yaml,
+# scripts/, packages/, tools/, apps/, e2e/package.json, skills/, design-systems/,
+# craft/, prompt-templates/, assets/, plugins/_official. Anything else is dead
+# weight for the build context and was timing out the upload.
+.git
+node_modules
+**/node_modules
+
+# Non-build top-level dirs (not referenced by deploy/Dockerfile)
+charts
+data
+docs
+mocks
+nix
+specs
+story
+templates
+design-templates
+.github
+
+# e2e: the Dockerfile only needs e2e/package.json
+e2e/tests
+e2e/ui
+e2e/lib
+e2e/resources
+
+# Misc dev artifacts
+.tmp
+flake.lock
+flake.nix
+mise.toml
