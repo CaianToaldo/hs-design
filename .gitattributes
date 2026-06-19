@@ -1,0 +1,3 @@
+# hs/deploy: the container entrypoint must stay LF — a CRLF shell script fails
+# on Linux with a `/bin/sh^M: bad interpreter` error.
+deploy/entrypoint.sh text eol=lf

@@ -80,7 +80,7 @@ COPY plugins/_official ./plugins/_official
 
 FROM ${RUNTIME_IMAGE}
 
-RUN apk add --no-cache tini poppler-utils && \
+RUN apk add --no-cache tini poppler-utils su-exec && \
     addgroup -S -g 1001 open-design && \
     adduser -S -D -H -u 1001 -G open-design open-design
 
@@ -100,8 +100,10 @@ COPY --from=build --chown=open-design:open-design /app/assets/community-pets ./a
 # via the same registry path third-party plugins use.
 COPY --from=build --chown=open-design:open-design /app/plugins/_official ./plugins/_official
 
+COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN mkdir -p /app/.od && \
-    chown -R open-design:open-design /app
+    chown -R open-design:open-design /app && \
+    chmod +x /usr/local/bin/entrypoint.sh
 
 ENV NODE_ENV=production
 ENV NODE_OPTIONS=--max-old-space-size=192
@@ -110,6 +112,8 @@ ENV OD_PORT=7456
 
 EXPOSE 7456
 
-USER open-design
-ENTRYPOINT ["/sbin/tini", "--"]
+# hs/deploy: entrypoint runs as root to chown the (root-owned) mounted volume
+# at /app/.od, then drops to the open-design user via su-exec. Do not re-add a
+# `USER open-design` line here — it would prevent the runtime chown.
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["node", "apps/daemon/dist/cli.js", "--no-open"]
