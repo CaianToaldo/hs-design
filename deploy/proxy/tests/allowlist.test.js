@@ -19,3 +19,14 @@ test('allows listed email (case-insensitive)', async () => {
 test('rejects unlisted email', async () => {
   assert.equal(await _isEmailAllowedWith(fakeDb(['caian@hs.com']), 'x@y.com'), false);
 });
+test('throws (fail-closed) on DB error', async () => {
+  const errorDb = {
+    from() { return this; },
+    select() { return this; },
+    eq() { return this; },
+    async maybeSingle() {
+      return { data: null, error: { message: 'connection refused' } };
+    },
+  };
+  await assert.rejects(() => _isEmailAllowedWith(errorDb, 'x@y.com'), /connection refused/);
+});

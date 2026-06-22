@@ -34,10 +34,17 @@ export async function forwardToDaemon(req, res, { cfg, resolveUserKey = null }) 
       if (!userKey) { sendNoKey(res); return; }
       const injected = Buffer.from(JSON.stringify(injectUserKey(parsed, userKey)), 'utf8');
       outBody = injected;
-      headers['content-length'] = String(injected.length);
     } else {
       outBody = raw; // body already consumed; forward as-is (no credential)
     }
+  }
+
+  // When we send a fixed-length buffered body, remove any chunked framing the
+  // client may have advertised — having both content-length and transfer-encoding
+  // is an HTTP framing ambiguity (RFC 7230 §3.3.3).
+  if (outBody != null) {
+    headers['content-length'] = String(outBody.length);
+    delete headers['transfer-encoding'];
   }
 
   const upstream = http.request(
