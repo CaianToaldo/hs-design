@@ -78,6 +78,10 @@ COPY prompt-templates ./prompt-templates
 COPY assets ./assets
 COPY plugins/_official ./plugins/_official
 
+# hs/deploy: install the bundled proxy's production deps (@supabase/supabase-js)
+COPY deploy/proxy/ /app/deploy/proxy/
+RUN cd /app/deploy/proxy && npm ci --omit=dev
+
 FROM ${RUNTIME_IMAGE}
 
 RUN apk add --no-cache tini poppler-utils su-exec && \
@@ -101,11 +105,11 @@ COPY --from=build --chown=open-design:open-design /app/assets/community-pets ./a
 COPY --from=build --chown=open-design:open-design /app/plugins/_official ./plugins/_official
 
 COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
-# hs/deploy: bundled authenticating proxy (see deploy/proxy/proxy.js). It runs
-# in the same container, gates with Basic auth, and forwards to the loopback
+# hs/deploy: bundled authenticating proxy (ESM package with @supabase/supabase-js).
+# It runs in the same container, gates with Basic auth, and forwards to the loopback
 # daemon — so the loopback-only daemon needs no API token (loopback peers
 # bypass the auth gate) and there is no second Railway service to wire up.
-COPY deploy/proxy/proxy.js /usr/local/bin/proxy.js
+COPY --from=build --chown=open-design:open-design /app/deploy/proxy /app/proxy
 RUN mkdir -p /app/.od && \
     chown -R open-design:open-design /app && \
     chmod +x /usr/local/bin/entrypoint.sh

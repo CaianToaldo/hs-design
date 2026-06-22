@@ -13,4 +13,4 @@ chown -R open-design:open-design "$DATA_DIR"
 # token. Then run the authenticating proxy in the foreground (PID receives
 # tini's signals); if the proxy exits the container restarts.
 su-exec open-design:open-design "$@" &
-exec su-exec open-design:open-design node /usr/local/bin/proxy.js
+exec su-exec open-design:open-design node /app/proxy/proxy.js
