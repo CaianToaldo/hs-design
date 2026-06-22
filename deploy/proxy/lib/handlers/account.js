@@ -15,8 +15,14 @@ ${tail ? `<div class="tail">Configurada: •••${tail}</div>` : '<div class="
 <input name="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" required>
 <button type="submit">Salvar</button>
 ${saved ? '<div class="tail">Salva com sucesso. <a href="/">Ir para o app</a></div>' : ''}
-<div class="tail"><a href="/">Voltar ao app</a> · <form method="POST" action="/logout" style="display:inline"><button style="background:none;color:#f26522;width:auto;padding:0;margin-top:.6rem" type="submit">Sair</button></form></div>
-</form></body></html>`;
+</form>
+<div class="tail" style="text-align:center;margin-top:.5rem">
+  <a href="/">Voltar ao app</a> ·
+  <form method="POST" action="/logout" style="display:inline">
+    <button style="background:none;color:#f26522;width:auto;padding:0" type="submit">Sair</button>
+  </form>
+</div>
+</body></html>`;
 
 function send(res, status, html) {
   res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
