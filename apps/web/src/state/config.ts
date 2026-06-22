@@ -1,4 +1,5 @@
 import type { AppConfigPrefs } from '@open-design/contracts';
+import { HS_HOSTED } from './hosted';
 import { MEDIA_PROVIDERS } from '../media/models';
 import { isOpenAICompatible } from '../providers/openai-compatible';
 import type {
@@ -393,12 +394,14 @@ export function loadConfig(): AppConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return {
+      const fresh = {
         ...DEFAULT_CONFIG,
         pet: normalizePet(DEFAULT_PET),
         notifications: normalizeNotifications(DEFAULT_NOTIFICATIONS),
         orbit: normalizeOrbit(DEFAULT_ORBIT),
       };
+      if (HS_HOSTED) fresh.mode = 'api';
+      return fresh;
     }
     const parsed = JSON.parse(raw) as Partial<AppConfig>;
     // Strip daemon-owned privacy fields if a stale localStorage payload
@@ -463,14 +466,17 @@ export function loadConfig(): AppConfig {
       merged.baseUrl = resolveFixedOriginBaseUrl(merged.apiProtocol, merged.baseUrl);
     }
 
+    if (HS_HOSTED) merged.mode = 'api';
     return merged;
   } catch {
-    return {
+    const fresh = {
       ...DEFAULT_CONFIG,
       pet: normalizePet(DEFAULT_PET),
       notifications: normalizeNotifications(DEFAULT_NOTIFICATIONS),
       orbit: normalizeOrbit(DEFAULT_ORBIT),
     };
+    if (HS_HOSTED) fresh.mode = 'api';
+    return fresh;
   }
 }
 

@@ -1,4 +1,5 @@
 import { effectiveMaxTokens } from '../state/maxTokens';
+import { HS_HOSTED, HS_MANAGED_KEY_PLACEHOLDER } from '../state/hosted';
 import type { AppConfig, ChatMessage } from '../types';
 import type {
   ProxyImageContentBlock,
@@ -40,7 +41,8 @@ export async function streamProxyEndpoint(
   handlers: StreamHandlers,
   context?: ProxyContext,
 ): Promise<void> {
-  if (!cfg.apiKey) {
+  const effectiveApiKey = cfg.apiKey || (HS_HOSTED ? HS_MANAGED_KEY_PLACEHOLDER : '');
+  if (!effectiveApiKey) {
     handlers.onError(new Error('Missing API key — open Settings and paste one in.'));
     return;
   }
@@ -54,7 +56,7 @@ export async function streamProxyEndpoint(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         baseUrl: cfg.baseUrl,
-        apiKey: cfg.apiKey,
+        apiKey: effectiveApiKey,
         model: cfg.model,
         systemPrompt: system,
         messages,
