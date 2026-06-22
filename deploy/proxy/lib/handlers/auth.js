@@ -53,7 +53,7 @@ export async function handleAuthRoutes(req, res, ctx) {
       if (error || !data?.session) { send(res, 401, LOGIN_PAGE('Link inválido ou expirado.')); return true; }
       const user = data.session.user;
       if (!(await isEmailAllowed(cfg, user.email))) {
-        send(res, 403, LOGIN_PAGE('E-mail sem acesso.')); return true;
+        send(res, 401, LOGIN_PAGE('Link inválido ou expirado.')); return true;
       }
       setSessionCookies(res, cfg, data.session);
       res.writeHead(302, { Location: '/' }); res.end(); return true;
@@ -67,6 +67,7 @@ export async function handleAuthRoutes(req, res, ctx) {
     const body = await readBody(req);
     const params = new URLSearchParams(body.toString('utf8'));
     const access = params.get('access_token'); const refresh = params.get('refresh_token');
+    if (!access || !refresh) { send(res, 401, LOGIN_PAGE('Sessão inválida.')); return true; }
     const { data, error } = await anon.auth.getUser(access || '');
     if (error || !data?.user || !(await isEmailAllowed(cfg, data.user.email))) {
       send(res, 401, LOGIN_PAGE('Sessão inválida.')); return true;
