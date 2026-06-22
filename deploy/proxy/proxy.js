@@ -1,96 +1,86 @@
-// hs/deploy: Authenticating reverse proxy for the HS Design daemon.
-//
-// The daemon (bound to 0.0.0.0 with OD_API_TOKEN) requires
-// `Authorization: Bearer <OD_API_TOKEN>` on every /api request, and the web UI
-// — built for loopback — never sends it. This zero-dependency proxy sits in
-// front of the (now private) daemon: it gates access with HTTP Basic auth and
-// injects the bearer token before forwarding, so the browser UI works over a
-// public domain. This is the "proxy injetor" from the BUILD-LOOP spike (Fase 3).
-//
-// Env:
-//   PORT             listen port (Railway target port)            default 8080
-//   DAEMON_INTERNAL  daemon host:port on the private network      e.g. hs-design-copy.railway.internal:7456
-//   OD_API_TOKEN     the daemon bearer token (Railway reference)
-//   PROXY_USER       Basic-auth username
-//   PROXY_PASS       Basic-auth password (set as a Railway secret)
-'use strict';
-const http = require('node:http');
+// deploy/proxy/proxy.js — HS Design authenticating proxy (basic | supabase)
+import http from 'node:http';
+import { loadConfig } from './lib/config.js';
+import { isBasicAuthed, requireBasic } from './lib/basic-auth.js';
+import { anonClient } from './lib/supabase.js';
+import { parseCookies } from './lib/cookies.js';
+import { makeSessionValidator } from './lib/session.js';
+import { getUserKey } from './lib/keystore.js';
+import { handleAuthRoutes } from './lib/handlers/auth.js';
+import { handleAccountRoutes } from './lib/handlers/account.js';
+import { forwardToDaemon } from './lib/handlers/forward.js';
 
-const PORT = Number(process.env.PORT) || 8080;
-const DAEMON = process.env.DAEMON_INTERNAL || '';
-const TOKEN = process.env.OD_API_TOKEN || '';
-const USER = process.env.PROXY_USER || '';
-const PASS = process.env.PROXY_PASS || '';
+const cfg = loadConfig();
 
-const sep = DAEMON.lastIndexOf(':');
-const DHOST = sep > 0 ? DAEMON.slice(0, sep) : DAEMON;
-const DPORT = sep > 0 ? Number(DAEMON.slice(sep + 1)) : 7456;
-
-if (!DAEMON || !TOKEN || !USER || !PASS) {
-  console.error('[proxy] missing required env (DAEMON_INTERNAL, OD_API_TOKEN, PROXY_USER, PROXY_PASS)');
+async function readBody(req) {
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  return Buffer.concat(chunks);
 }
 
-function timingSafeEqual(a, b) {
-  const ba = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ba.length !== bb.length) return false;
-  return require('node:crypto').timingSafeEqual(ba, bb);
+function buildBasicServer() {
+  return http.createServer((req, res) => {
+    if (!isBasicAuthed(req, cfg.basic)) return requireBasic(res);
+    // resolveUserKey omitted → pure pass-through pipe, identical to today.
+    forwardToDaemon(req, res, { cfg });
+  });
 }
 
-function authed(req) {
-  const header = req.headers['authorization'] || '';
-  const m = /^Basic\s+(.+)$/i.exec(header);
-  if (!m) return false;
-  let decoded;
-  try {
-    decoded = Buffer.from(m[1], 'base64').toString('utf8');
-  } catch {
-    return false;
+function buildSupabaseServer() {
+  const anon = anonClient(cfg);
+  const validateSession = makeSessionValidator(async (token) => {
+    const { data, error } = await anon.auth.getUser(token);
+    if (error || !data?.user) return null;
+    return { id: data.user.id, email: data.user.email };
+  });
+
+  // Short-TTL cache of each user's decrypted key, so credential-carrying
+  // requests don't hit Supabase every time. Invalidated when /conta saves.
+  const keyCache = new Map(); // userId -> { key, exp }
+  const KEY_TTL_MS = 60000;
+  async function getCachedUserKey(userId) {
+    const hit = keyCache.get(userId);
+    if (hit && hit.exp > Date.now()) return hit.key;
+    const rec = await getUserKey(cfg, userId).catch(() => null);
+    const key = rec?.plain || null;
+    keyCache.set(userId, { key, exp: Date.now() + KEY_TTL_MS });
+    return key;
   }
-  const idx = decoded.indexOf(':');
-  if (idx < 0) return false;
-  const u = decoded.slice(0, idx);
-  const p = decoded.slice(idx + 1);
-  return timingSafeEqual(u, USER) && timingSafeEqual(p, PASS);
+  const invalidateKey = (userId) => keyCache.delete(userId);
+
+  return http.createServer(async (req, res) => {
+    try {
+      // Public auth routes (no session required).
+      if (await handleAuthRoutes(req, res, { cfg, anon, readBody })) return;
+
+      // Session gate.
+      const token = parseCookies(req.headers['cookie']).hs_session;
+      const user = await validateSession(token);
+      if (!user) {
+        if (req.headers['accept']?.includes('text/html')) {
+          res.writeHead(302, { Location: '/login' }); res.end(); return;
+        }
+        res.writeHead(401, { 'Content-Type': 'text/plain' }); res.end('Unauthorized'); return;
+      }
+
+      // Account page (manage own key).
+      if (await handleAccountRoutes(req, res, { cfg, user, readBody, invalidateKey })) return;
+
+      // Everything else → daemon. forwardToDaemon resolves the key lazily and
+      // ONLY for credential-carrying bodies; non-provider requests pass through
+      // without needing a key (so the app still loads before /conta is set).
+      await forwardToDaemon(req, res, { cfg, resolveUserKey: () => getCachedUserKey(user.id) });
+    } catch (err) {
+      if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(`proxy error: ${err.message}`);
+    }
+  });
 }
 
-function requireAuth(res) {
-  res.writeHead(401, {
-    'WWW-Authenticate': 'Basic realm="HS Design", charset="UTF-8"',
-    'Content-Type': 'text/plain; charset=utf-8',
-  });
-  res.end('Authentication required');
-}
-
-const server = http.createServer((req, res) => {
-  if (!authed(req)) return requireAuth(res);
-
-  // Forward the original headers (keep Host/Origin so the daemon's
-  // allowed-origin check sees the public proxy domain), but replace the
-  // client's Basic credential with the daemon bearer token.
-  const headers = { ...req.headers };
-  headers['authorization'] = `Bearer ${TOKEN}`;
-  delete headers['connection'];
-
-  const upstream = http.request(
-    { host: DHOST, port: DPORT, path: req.url, method: req.method, headers },
-    (uRes) => {
-      res.writeHead(uRes.statusCode || 502, uRes.headers);
-      uRes.pipe(res);
-    },
-  );
-  upstream.on('error', (err) => {
-    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
-    res.end(`proxy upstream error: ${err.message}`);
-  });
-  req.pipe(upstream);
-});
-
-// Keep SSE / long-poll streams alive (the chat stream can run for minutes).
+const server = cfg.MODE === 'supabase' ? buildSupabaseServer() : buildBasicServer();
 server.requestTimeout = 0;
 server.headersTimeout = 0;
 server.keepAliveTimeout = 0;
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[proxy] listening on :${PORT} -> ${DHOST}:${DPORT} (basic-auth gated, bearer injected)`);
+server.listen(cfg.PORT, '0.0.0.0', () => {
+  console.log(`[proxy] mode=${cfg.MODE} listening on :${cfg.PORT} -> ${cfg.DAEMON.host}:${cfg.DAEMON.port}`);
 });
